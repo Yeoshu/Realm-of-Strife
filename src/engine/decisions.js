@@ -5,6 +5,7 @@ import { BATTLEFIELD_ZONES, hasRacePassive } from '../constants';
 import { getRelevantSkillForAction, getProficiencyDamageModifier } from '../constants/skills';
 import { areAllies, areEnemies, calculateCompatibility } from './relationships';
 import { getCombatPower } from './combat';
+import { ARCHETYPE_ACTIONS } from './archetypeActions';
 
 /**
  * Calculate how much a champion prefers an action based on their relevant skill
@@ -81,6 +82,10 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
   const hasWeapon = champion.inventory.some(i => i.combatBonus);
   const combatCapable = getCombatPower(champion) > 40;
   const isStrong = getCombatPower(champion) > 60;
+
+  // Get archetype-specific action info
+  const archetypeAction = ARCHETYPE_ACTIONS[champion.archetype];
+  const canUseArchetypeAction = archetypeAction && champion.energy > 20;
 
   // Skill-based preferences
   const meleePreference = calculateActionPreference(champion, 'hunt');
@@ -162,6 +167,140 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
   // Cooperative foraging when not desperate but allies present
   if (hasStrongAlliance && !nearbyEnemies.length && randomFloat() < 0.2) {
     return { type: 'group_forage', group: allyGroup };
+  }
+
+  // ============================================
+  // ARCHETYPE-SPECIFIC ACTION DECISIONS
+  // ============================================
+
+  if (canUseArchetypeAction) {
+    // KNIGHT: Rally allies when multiple are present
+    if (champion.archetype === 'knight' && nearbyAllies.length >= 1) {
+      const allyNeedsBoost = nearbyAllies.some(a => a.energy < 50 || a.sanity < 60);
+      if (allyNeedsBoost && randomFloat() < 0.35) {
+        return { type: 'archetype_rally', allies: nearbyAllies };
+      }
+    }
+
+    // BERSERKER: Blood rage when health is moderate and enemy is present
+    if (champion.archetype === 'berserker' && nearbyEnemies.length > 0 && champion.health > 40) {
+      const strongEnemy = nearbyEnemies.find(e => getCombatPower(e) > getCombatPower(champion) * 0.7);
+      if (strongEnemy && (p.aggression > 60 || p.impulsiveness > 50) && randomFloat() < 0.4) {
+        return { type: 'archetype_blood_rage', target: strongEnemy };
+      }
+    }
+
+    // ASSASSIN: Shadow strike against wounded or unaware targets
+    if (champion.archetype === 'assassin' && nearbyChampions.length > 0) {
+      const woundedTarget = nearbyChampions.find(t => t.health < 50 && !areAllies(champion, t));
+      if (woundedTarget && randomFloat() < 0.4) {
+        return { type: 'archetype_shadow_strike', target: woundedTarget };
+      }
+    }
+
+    // GUARDIAN: Shield wall to protect wounded allies
+    if (champion.archetype === 'guardian' && nearbyAllies.length > 0 && nearbyEnemies.length > 0) {
+      const woundedAlly = nearbyAllies.find(a => a.health < 50);
+      if (woundedAlly && randomFloat() < 0.5) {
+        return { type: 'archetype_shield_wall', ally: woundedAlly };
+      }
+    }
+
+    // PALADIN: Smite evil races (undead, vampire, dark_elf)
+    if (champion.archetype === 'paladin' && nearbyEnemies.length > 0) {
+      const evilTarget = nearbyEnemies.find(e => ['undead', 'vampire', 'dark_elf'].includes(e.race));
+      if (evilTarget && randomFloat() < 0.6) {
+        return { type: 'archetype_smite', target: evilTarget };
+      }
+      // Also smite regular enemies if righteous
+      if (p.empathy > 50 && p.loyalty > 50 && randomFloat() < 0.25) {
+        return { type: 'archetype_smite', target: pick(nearbyEnemies) };
+      }
+    }
+
+    // REAVER: Execute wounded enemies
+    if (champion.archetype === 'reaver' && nearbyChampions.length > 0) {
+      const woundedPrey = nearbyChampions.find(t => t.health < 35 && !areAllies(champion, t));
+      if (woundedPrey && randomFloat() < 0.6) {
+        return { type: 'archetype_execution', target: woundedPrey };
+      }
+    }
+
+    // WITCH HUNTER: Purge magical races
+    if (champion.archetype === 'witch_hunter' && nearbyChampions.length > 0) {
+      const magicalTarget = nearbyChampions.find(t =>
+        ['undead', 'vampire', 'dark_elf', 'elf'].includes(t.race) && !areAllies(champion, t)
+      );
+      if (magicalTarget && randomFloat() < 0.55) {
+        return { type: 'archetype_purge', target: magicalTarget };
+      }
+    }
+
+    // TOURNEY CHAMPION: Flourish for glory
+    if (champion.archetype === 'champion' && nearbyEnemies.length > 0 && combatCapable) {
+      // More likely when audience (other champions) present
+      const hasAudience = nearbyChampions.length >= 2;
+      const flourishChance = hasAudience ? 0.4 : 0.2;
+      if (p.pride > 50 && randomFloat() < flourishChance) {
+        return { type: 'archetype_flourish', target: pick(nearbyEnemies) };
+      }
+    }
+
+    // RANGER: Track specific enemies when they're not nearby
+    if (champion.archetype === 'ranger' && nearbyEnemies.length === 0) {
+      const knownEnemies = allChampions.filter(t =>
+        t.alive && t.id !== champion.id && (areEnemies(champion, t) || champion.grudges[t.id])
+      );
+      if (knownEnemies.length > 0 && randomFloat() < 0.3) {
+        return { type: 'archetype_track', target: pick(knownEnemies) };
+      }
+    }
+
+    // HEALER: Miracle cure for self or allies
+    if (champion.archetype === 'healer') {
+      // Heal wounded ally
+      const woundedAlly = nearbyAllies.find(a => a.health < 60);
+      if (woundedAlly && randomFloat() < 0.6) {
+        return { type: 'archetype_miracle', target: woundedAlly };
+      }
+      // Heal self
+      if (injured && randomFloat() < 0.5) {
+        return { type: 'archetype_miracle', target: null }; // null = self
+      }
+    }
+
+    // COURTIER: Scheme to manipulate relationships
+    if (champion.archetype === 'courtier' && nearbyChampions.length >= 2) {
+      const potentialTargets = nearbyChampions.filter(t => !areAllies(champion, t));
+      if (potentialTargets.length >= 2 && p.cunning > 50 && randomFloat() < 0.35) {
+        return { type: 'archetype_scheme', targets: potentialTargets.slice(0, 2) };
+      }
+    }
+
+    // MADMAN: Unpredictable chaos
+    if (champion.archetype === 'madman') {
+      // Higher chance when sanity is low
+      const chaosChance = champion.sanity < 40 ? 0.5 : 0.25;
+      if (randomFloat() < chaosChance) {
+        return { type: 'archetype_chaos', nearbyChampions };
+      }
+    }
+
+    // RELUCTANT HERO: Inspire hope in allies
+    if (champion.archetype === 'reluctant_hero' && nearbyAllies.length > 0) {
+      const demoralized = nearbyAllies.some(a => a.sanity < 50);
+      if (demoralized && randomFloat() < 0.4) {
+        return { type: 'archetype_inspire', allies: nearbyAllies };
+      }
+    }
+
+    // HEDGE KNIGHT: Offer services when alone and need resources
+    if (champion.archetype === 'hedge_knight' && nearbyNeutrals.length > 0) {
+      const needsResources = champion.inventory.length < 2 || champion.hunger < 50;
+      if (needsResources && randomFloat() < 0.3) {
+        return { type: 'archetype_gambit', target: pick(nearbyNeutrals) };
+      }
+    }
   }
 
   // ============================================

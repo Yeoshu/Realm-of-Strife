@@ -18,6 +18,13 @@ import {
   handleGroupHunt, handleCooperativeForaging, handleCooperativeDefense,
   handleGroupRest, handleAllianceSplit, handleGroupMorale
 } from './groups';
+import {
+  handleKnightRally, handleBerserkerRage, handleAssassinShadowStrike,
+  handleGuardianShieldWall, handlePaladinSmite, handleReaverExecution,
+  handleWitchHunterPurge, handleTourneyFlourish, handleRangerTrack,
+  handleHealerMiracle, handleCourtierScheme, handleMadmanChaos,
+  handleReluctantHeroInspire, handleHedgeKnightGambit
+} from './archetypeActions';
 
 export function generateEvent(champion, allChampions, day, gameState) {
   const livingChampions = allChampions.filter(t => t.alive && t.id !== champion.id);
@@ -187,6 +194,49 @@ export function generateEvent(champion, allChampions, day, gameState) {
       break;
     case 'defend_ally':
       events.push(...handleCooperativeDefense(action.group, action.attacker, allChampions));
+      break;
+    // Archetype-specific actions
+    case 'archetype_rally':
+      events.push(...handleKnightRally(champion, action.allies, allChampions));
+      break;
+    case 'archetype_blood_rage':
+      events.push(...handleBerserkerRage(champion, action.target, allChampions));
+      break;
+    case 'archetype_shadow_strike':
+      events.push(...handleAssassinShadowStrike(champion, action.target, allChampions));
+      break;
+    case 'archetype_shield_wall':
+      events.push(...handleGuardianShieldWall(champion, action.ally, allChampions));
+      break;
+    case 'archetype_smite':
+      events.push(...handlePaladinSmite(champion, action.target, allChampions));
+      break;
+    case 'archetype_execution':
+      events.push(...handleReaverExecution(champion, action.target, allChampions));
+      break;
+    case 'archetype_purge':
+      events.push(...handleWitchHunterPurge(champion, action.target, allChampions));
+      break;
+    case 'archetype_flourish':
+      events.push(...handleTourneyFlourish(champion, action.target, allChampions));
+      break;
+    case 'archetype_track':
+      events.push(...handleRangerTrack(champion, action.target, allChampions));
+      break;
+    case 'archetype_miracle':
+      events.push(...handleHealerMiracle(champion, action.target, allChampions));
+      break;
+    case 'archetype_scheme':
+      events.push(...handleCourtierScheme(champion, action.targets, allChampions));
+      break;
+    case 'archetype_chaos':
+      events.push(...handleMadmanChaos(champion, action.nearbyChampions, allChampions, zone));
+      break;
+    case 'archetype_inspire':
+      events.push(...handleReluctantHeroInspire(champion, action.allies, allChampions));
+      break;
+    case 'archetype_gambit':
+      events.push(...handleHedgeKnightGambit(champion, action.target, allChampions));
       break;
   }
 
