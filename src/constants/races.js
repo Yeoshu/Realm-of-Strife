@@ -6,6 +6,8 @@ export const RACES = {
     name: 'Human',
     description: 'Versatile and adaptable, humans excel through sheer determination.',
     statBonuses: { charisma: 5, intelligence: 5 },
+    skillBonuses: { persuasion: 10, tactics: 10 },
+    proficiencyBonuses: { blade: 10 },
     passives: {
       adaptable: {
         name: 'Adaptable',
@@ -30,6 +32,8 @@ export const RACES = {
     name: 'Elf',
     description: 'Ancient and graceful, elves possess keen senses and natural agility.',
     statBonuses: { speed: 10, stealth: 10, intelligence: 5, strength: -5 },
+    skillBonuses: { archery: 15, stealth: 10, survival: 5 },
+    proficiencyBonuses: { ranged: 20, blade: 10 },
     passives: {
       keenSenses: {
         name: 'Keen Senses',
@@ -61,6 +65,8 @@ export const RACES = {
     name: 'Dwarf',
     description: 'Stout and resilient, dwarves are legendary craftsmen and warriors.',
     statBonuses: { strength: 10, combat: 5, survival: 5, speed: -5 },
+    skillBonuses: { melee: 15, survival: 10, intimidation: 5 },
+    proficiencyBonuses: { blunt: 25, blade: 15 },
     passives: {
       stoneborn: {
         name: 'Stoneborn',
@@ -93,6 +99,8 @@ export const RACES = {
     name: 'Orc',
     description: 'Brutal and powerful, orcs are born for warfare.',
     statBonuses: { strength: 15, combat: 10, intelligence: -10, charisma: -5 },
+    skillBonuses: { melee: 20, intimidation: 15 },
+    proficiencyBonuses: { blade: 15, blunt: 20, unarmed: 15 },
     passives: {
       bloodlust: {
         name: 'Bloodlust',
@@ -124,6 +132,8 @@ export const RACES = {
     name: 'Halfling',
     description: 'Small but surprisingly lucky, halflings are natural survivors.',
     statBonuses: { stealth: 15, survival: 10, strength: -10, combat: -5 },
+    skillBonuses: { stealth: 20, survival: 15, persuasion: 10 },
+    proficiencyBonuses: { ranged: 15, blade: 10 },
     passives: {
       lucky: {
         name: 'Lucky',
@@ -154,6 +164,8 @@ export const RACES = {
     name: 'Undead',
     description: 'Risen from death, these cursed beings feel no pain or fear.',
     statBonuses: { survival: -20, combat: 5 },
+    skillBonuses: { intimidation: 20, melee: 10 },
+    proficiencyBonuses: { blade: 15, unarmed: 15 },
     passives: {
       feelNoPain: {
         name: 'Feel No Pain',
@@ -191,6 +203,8 @@ export const RACES = {
     name: 'Beastkin',
     description: 'Part human, part beast - these warriors embrace their feral nature.',
     statBonuses: { strength: 5, speed: 10, stealth: 5, charisma: -5 },
+    skillBonuses: { stealth: 15, survival: 15, melee: 10 },
+    proficiencyBonuses: { unarmed: 25, blade: 10 },
     passives: {
       feralSenses: {
         name: 'Feral Senses',
@@ -221,6 +235,8 @@ export const RACES = {
     name: 'Dark Elf',
     description: 'Twisted kin of the elves, dark elves are masters of shadow and poison.',
     statBonuses: { stealth: 15, cunning: 10, intelligence: 5, empathy: -10 },
+    skillBonuses: { stealth: 20, archery: 10, intimidation: 10 },
+    proficiencyBonuses: { blade: 20, ranged: 15 },
     passives: {
       shadowMeld: {
         name: 'Shadow Meld',
@@ -252,6 +268,8 @@ export const RACES = {
     name: 'Half-Giant',
     description: 'Towering warriors with immense strength but slow reflexes.',
     statBonuses: { strength: 25, combat: 10, speed: -15, stealth: -20 },
+    skillBonuses: { melee: 20, intimidation: 20 },
+    proficiencyBonuses: { blunt: 30, polearm: 15 },
     passives: {
       towering: {
         name: 'Towering',
@@ -283,6 +301,8 @@ export const RACES = {
     name: 'Vampire',
     description: 'Immortal predators who drain the life from their victims.',
     statBonuses: { strength: 10, speed: 10, charisma: 10, survival: -10 },
+    skillBonuses: { melee: 15, persuasion: 15, stealth: 10 },
+    proficiencyBonuses: { blade: 20, unarmed: 20 },
     passives: {
       lifeDrain: {
         name: 'Life Drain',

@@ -2,6 +2,14 @@
 
 import { random, randomFloat, pick, clamp, generateId } from '../utils';
 import { BATTLEFIELD_ZONES, ITEMS, getRacePassiveValue, hasRacePassive } from '../constants';
+import {
+  calculateSuccessLevel,
+  SUCCESS_LEVELS,
+  applyForagingSuccessEffects,
+  applyTheftSuccessEffects,
+  applyAmbushSuccessEffects,
+  applyAllianceSuccessEffects
+} from '../constants/skills';
 import { getRelationship, modifyRelationship, areAllies, areEnemies } from './relationships';
 import { resolveCombat, getCombatPower, getWeaponName } from './combat';
 
@@ -72,14 +80,39 @@ export function handleHunting(hunter, nearbyChampions, allChampions) {
 export function handleForaging(champion, zone) {
   const events = [];
 
-  const successChance = (champion.stats.survival / 100) * zone.resourceChance + 0.2;
+  // Use survival skill for foraging check
+  const survivalSkill = champion.skills?.survival || 40;
+  const zoneDifficulty = 50 - (zone.resourceChance * 30); // Higher resource zones are easier
+  const successResult = calculateSuccessLevel(survivalSkill, zoneDifficulty);
+  const effects = applyForagingSuccessEffects(successResult.successLevel);
 
-  if (randomFloat() < successChance) {
-    // Find something!
+  if (successResult.successLevel === SUCCESS_LEVELS.CRITICAL_FAILURE) {
+    // Critical failure: injury while foraging
+    const damage = random(5, 15);
+    champion.health -= damage;
+    champion.injuries.push({ type: 'foraging accident', severity: 'minor', daysLeft: random(1, 3) });
+    events.push({
+      type: 'hazard',
+      text: `${champion.name} is injured while foraging, taking ${damage} damage!`,
+      severity: 'danger'
+    });
+  } else if (successResult.successLevel === SUCCESS_LEVELS.FAILURE) {
+    // Failure: find nothing
+    events.push({ type: 'action', text: `${champion.name} searches but finds nothing useful.` });
+  } else if (successResult.successLevel === SUCCESS_LEVELS.PARTIAL_SUCCESS) {
+    // Partial success: minimal yield
+    const foodAmount = random(10, 20);
+    champion.hunger = clamp(champion.hunger + foodAmount, 0, 100);
+    events.push({
+      type: 'resource',
+      text: `${champion.name} finds only a few scraps of food.`,
+      severity: 'info'
+    });
+  } else if (successResult.successLevel === SUCCESS_LEVELS.SUCCESS) {
+    // Success: normal foraging
     const findType = randomFloat();
 
     if (findType < 0.4) {
-      // Food
       const foodAmount = random(15, 35);
       champion.hunger = clamp(champion.hunger + foodAmount, 0, 100);
       events.push({
@@ -88,7 +121,6 @@ export function handleForaging(champion, zone) {
         severity: 'success'
       });
     } else if (findType < 0.7) {
-      // Water
       const waterAmount = random(20, 40);
       champion.thirst = clamp(champion.thirst + waterAmount, 0, 100);
       events.push({
@@ -97,8 +129,7 @@ export function handleForaging(champion, zone) {
         severity: 'success'
       });
     } else {
-      // Item!
-      const itemPool = randomFloat() < 0.3 ? ITEMS.weapons : ITEMS.supplies;
+      const itemPool = ITEMS.supplies;
       const availableItems = itemPool.filter(i => randomFloat() < i.rarity);
       if (availableItems.length > 0) {
         const item = pick(availableItems);
@@ -113,8 +144,32 @@ export function handleForaging(champion, zone) {
         events.push({ type: 'resource', text: `${champion.name} finds some berries.` });
       }
     }
-  } else {
-    events.push({ type: 'action', text: `${champion.name} searches but finds nothing useful.` });
+  } else if (successResult.successLevel === SUCCESS_LEVELS.CRITICAL_SUCCESS) {
+    // Critical success: find rare item + bonus supplies
+    const foodAmount = random(30, 50);
+    const waterAmount = random(30, 50);
+    champion.hunger = clamp(champion.hunger + foodAmount, 0, 100);
+    champion.thirst = clamp(champion.thirst + waterAmount, 0, 100);
+
+    events.push({
+      type: 'resource',
+      text: `${champion.name} discovers an excellent foraging spot with abundant supplies!`,
+      severity: 'success'
+    });
+
+    // Chance to find a rare weapon
+    if (randomFloat() < 0.5) {
+      const rareItems = ITEMS.weapons.filter(w => w.rarity < 0.2);
+      if (rareItems.length > 0) {
+        const item = pick(rareItems);
+        champion.inventory.push({...item});
+        events.push({
+          type: 'resource',
+          text: `${champion.name} also discovers a hidden ${item.name}!`,
+          severity: 'success'
+        });
+      }
+    }
   }
 
   champion.energy -= 12;
@@ -165,27 +220,64 @@ export function handleMovement(champion, targetZone) {
 export function handleAllianceAttempt(champion, target, allChampions) {
   const events = [];
 
-  // Success based on charisma and existing relationship
+  // Use persuasion skill for alliance check
+  const persuasionSkill = champion.skills?.persuasion || 40;
+
+  // Difficulty based on target's personality and relationship
   const currentRel = getRelationship(champion, target.id);
-  const successChance = (champion.stats.charisma / 100) * 0.5 + (currentRel + 50) / 200 + 0.1;
+  const targetSociability = target.personality?.sociability || 50;
+  const realmBonus = champion.realm === target.realm ? -15 : 0; // Same realm makes it easier
+  const difficulty = 55 - (currentRel / 5) - (targetSociability / 10) - realmBonus;
 
-  // Same realm bonus
-  const realmBonus = champion.realm === target.realm ? 0.2 : 0;
+  const successResult = calculateSuccessLevel(persuasionSkill, difficulty);
+  const effects = applyAllianceSuccessEffects(successResult.successLevel);
 
-  if (randomFloat() < successChance + realmBonus) {
-    modifyRelationship(champion, target.id, 35, allChampions);
-    modifyRelationship(target, champion.id, 35, allChampions);
+  if (successResult.successLevel === SUCCESS_LEVELS.CRITICAL_SUCCESS) {
+    // Critical success: strong alliance formed
+    modifyRelationship(champion, target.id, effects.relationshipBonus, allChampions);
+    modifyRelationship(target, champion.id, effects.relationshipBonus, allChampions);
+
+    events.push({
+      type: 'alliance',
+      text: `${champion.name} and ${target.name} form a STRONG alliance! They swear to protect each other.`,
+      severity: 'success'
+    });
+  } else if (successResult.successLevel === SUCCESS_LEVELS.SUCCESS) {
+    // Success: normal alliance
+    modifyRelationship(champion, target.id, effects.relationshipBonus, allChampions);
+    modifyRelationship(target, champion.id, effects.relationshipBonus, allChampions);
 
     events.push({
       type: 'alliance',
       text: `${champion.name} and ${target.name} form an alliance!`,
       severity: 'success'
     });
-  } else {
-    modifyRelationship(champion, target.id, -10, allChampions);
+  } else if (successResult.successLevel === SUCCESS_LEVELS.PARTIAL_SUCCESS) {
+    // Partial success: tentative agreement
+    modifyRelationship(champion, target.id, effects.relationshipBonus, allChampions);
+    modifyRelationship(target, champion.id, Math.round(effects.relationshipBonus * 0.5), allChampions);
+
+    events.push({
+      type: 'alliance',
+      text: `${champion.name} and ${target.name} reach a tentative understanding, though trust is limited.`,
+      severity: 'info'
+    });
+  } else if (successResult.successLevel === SUCCESS_LEVELS.FAILURE) {
+    // Failure: rejected
+    modifyRelationship(champion, target.id, -5, allChampions);
     events.push({
       type: 'action',
       text: `${champion.name} attempts to ally with ${target.name}, but is rebuffed.`
+    });
+  } else if (successResult.successLevel === SUCCESS_LEVELS.CRITICAL_FAILURE) {
+    // Critical failure: deeply offended
+    modifyRelationship(champion, target.id, effects.relationshipBonus, allChampions);
+    modifyRelationship(target, champion.id, effects.relationshipBonus, allChampions);
+
+    events.push({
+      type: 'social',
+      text: `${champion.name}'s clumsy attempt to ally deeply offends ${target.name}!`,
+      severity: 'warning'
     });
   }
 
@@ -247,12 +339,38 @@ export function handleHealing(champion) {
 
   const healItem = champion.inventory.find(i => i.healAmount);
   if (healItem) {
-    champion.health = clamp(champion.health + healItem.healAmount, 0, 100);
+    // Use medicine skill for healing effectiveness
+    const medicineSkill = champion.skills?.medicine || 30;
+    const successResult = calculateSuccessLevel(medicineSkill, 40);
+
+    let healMultiplier = 1.0;
+    let message = '';
+
+    if (successResult.successLevel === SUCCESS_LEVELS.CRITICAL_SUCCESS) {
+      healMultiplier = 1.5;
+      message = `${champion.name} expertly applies their ${healItem.name}, achieving remarkable results!`;
+    } else if (successResult.successLevel === SUCCESS_LEVELS.SUCCESS) {
+      healMultiplier = 1.0;
+      message = `${champion.name} uses their ${healItem.name} to treat their wounds.`;
+    } else if (successResult.successLevel === SUCCESS_LEVELS.PARTIAL_SUCCESS) {
+      healMultiplier = 0.7;
+      message = `${champion.name} clumsily applies their ${healItem.name}, wasting some of it.`;
+    } else if (successResult.successLevel === SUCCESS_LEVELS.FAILURE) {
+      healMultiplier = 0.4;
+      message = `${champion.name} struggles to properly use their ${healItem.name}.`;
+    } else {
+      healMultiplier = 0.2;
+      message = `${champion.name} badly misuses their ${healItem.name}, wasting most of it.`;
+    }
+
+    const healAmount = Math.round(healItem.healAmount * healMultiplier);
+    champion.health = clamp(champion.health + healAmount, 0, 100);
     champion.inventory = champion.inventory.filter(i => i !== healItem);
+
     events.push({
       type: 'action',
-      text: `${champion.name} uses their ${healItem.name} to treat their wounds.`,
-      severity: 'success'
+      text: message,
+      severity: healMultiplier >= 1.0 ? 'success' : 'info'
     });
   }
 
@@ -292,16 +410,42 @@ export function handleHelpAlly(champion, ally, allChampions) {
   const waterItem = champion.inventory.find(i => i.thirstRestore);
 
   if (healItem && ally.health < 50) {
-    ally.health = clamp(ally.health + Math.round(healItem.healAmount * 0.7), 0, 100);
+    // Use medicine skill for healing effectiveness on ally
+    const medicineSkill = champion.skills?.medicine || 30;
+    const successResult = calculateSuccessLevel(medicineSkill, 45); // Slightly harder to heal others
+
+    let healMultiplier = 0.7; // Base is 70% when helping others
+    let message = '';
+    let relationshipBonus = 25;
+
+    if (successResult.successLevel === SUCCESS_LEVELS.CRITICAL_SUCCESS) {
+      healMultiplier = 1.0;
+      message = `${champion.name} expertly treats ${ally.name}'s wounds with their ${healItem.name}!`;
+      relationshipBonus = 35;
+    } else if (successResult.successLevel === SUCCESS_LEVELS.SUCCESS) {
+      healMultiplier = 0.8;
+      message = `${champion.name} tends to ${ally.name}'s wounds, sharing their ${healItem.name}.`;
+    } else if (successResult.successLevel === SUCCESS_LEVELS.PARTIAL_SUCCESS) {
+      healMultiplier = 0.5;
+      message = `${champion.name} does their best to help ${ally.name}, though their medical skills are limited.`;
+      relationshipBonus = 20;
+    } else {
+      healMultiplier = 0.3;
+      message = `${champion.name} tries to help ${ally.name} but struggles with the treatment.`;
+      relationshipBonus = 15;
+    }
+
+    const healAmount = Math.round(healItem.healAmount * healMultiplier);
+    ally.health = clamp(ally.health + healAmount, 0, 100);
     champion.inventory = champion.inventory.filter(i => i !== healItem);
 
     events.push({
       type: 'alliance',
-      text: `${champion.name} tends to ${ally.name}'s wounds, sharing their ${healItem.name}.`,
+      text: message,
       severity: 'success'
     });
 
-    modifyRelationship(ally, champion.id, 25, allChampions);
+    modifyRelationship(ally, champion.id, relationshipBonus, allChampions);
     modifyRelationship(champion, ally.id, 10, allChampions);
     champion.popularity += 5;
   } else if (foodItem && ally.hunger < 40) {
@@ -384,16 +528,36 @@ export function handleTheft(champion, target, allChampions) {
 
   champion.energy -= 15;
 
-  // Stealth vs awareness check
-  const stealthRoll = champion.stats.stealth + champion.stats.cunning * 0.3 + randomFloat() * 30;
-  let awarenessRoll = target.stats.intelligence + target.stats.survival * 0.3 + randomFloat() * 30;
+  // Use stealth skill for theft check
+  const stealthSkill = champion.skills?.stealth || 40;
 
-  // Race passive - keen senses makes theft harder
+  // Target's awareness affects difficulty
+  const targetAwareness = (target.stats.intelligence + target.stats.survival) / 2;
   const keenSenses = getRacePassiveValue(target, 'detectionBonus');
-  const awarenessBonus = keenSenses ? awarenessRoll * (1 + keenSenses.value) : awarenessRoll;
+  const awarenessBonus = keenSenses ? targetAwareness * (1 + keenSenses.value) : targetAwareness;
+  const difficulty = 40 + awarenessBonus * 0.3;
 
-  if (stealthRoll > awarenessBonus) {
-    // Successful theft
+  const successResult = calculateSuccessLevel(stealthSkill, difficulty);
+  const effects = applyTheftSuccessEffects(successResult.successLevel);
+
+  if (successResult.successLevel === SUCCESS_LEVELS.CRITICAL_SUCCESS) {
+    // Critical success: steal best item and clean escape
+    const bestItem = target.inventory.reduce((best, item) => {
+      const value = item.combatBonus || item.healAmount || item.hungerRestore || 10;
+      const bestValue = best.combatBonus || best.healAmount || best.hungerRestore || 10;
+      return value > bestValue ? item : best;
+    }, target.inventory[0]);
+
+    target.inventory = target.inventory.filter(i => i !== bestItem);
+    champion.inventory.push(bestItem);
+
+    events.push({
+      type: 'theft',
+      text: `${champion.name} executes a perfect theft, stealing ${bestItem.name} from ${target.name} without a trace!`,
+      severity: 'warning'
+    });
+  } else if (successResult.successLevel === SUCCESS_LEVELS.SUCCESS) {
+    // Success: steal item, clean escape
     const stolenItem = pick(target.inventory);
     target.inventory = target.inventory.filter(i => i !== stolenItem);
     champion.inventory.push(stolenItem);
@@ -405,31 +569,38 @@ export function handleTheft(champion, target, allChampions) {
     });
 
     // They might notice later
-    if (randomFloat() < 0.4) {
+    if (randomFloat() < 0.3) {
       modifyRelationship(target, champion.id, -30, allChampions);
       events.push({
         type: 'social',
         text: `${target.name} realizes they've been robbed and suspects ${champion.name}.`
       });
     }
-  } else {
-    // Caught!
+  } else if (successResult.successLevel === SUCCESS_LEVELS.PARTIAL_SUCCESS) {
+    // Partial success: caught but escapes
+    events.push({
+      type: 'confrontation',
+      text: `${target.name} spots ${champion.name} reaching for their belongings, but ${champion.name} slips away!`,
+      severity: 'warning'
+    });
+    modifyRelationship(target, champion.id, -35, allChampions);
+  } else if (successResult.successLevel === SUCCESS_LEVELS.FAILURE) {
+    // Failure: caught
     events.push({
       type: 'confrontation',
       text: `${target.name} catches ${champion.name} trying to steal from them!`,
       severity: 'danger'
     });
-
     modifyRelationship(target, champion.id, -50, allChampions);
-
-    // Might escalate to combat
-    if (target.personality.aggression > 50 || target.personality.pride > 60) {
-      events.push({
-        type: 'action',
-        text: `${target.name} attacks ${champion.name} in retaliation!`
-      });
-      events.push(...resolveCombatEvents(target, champion, allChampions));
-    }
+  } else if (successResult.successLevel === SUCCESS_LEVELS.CRITICAL_FAILURE) {
+    // Critical failure: caught and combat ensues
+    events.push({
+      type: 'confrontation',
+      text: `${target.name} catches ${champion.name} red-handed and attacks in fury!`,
+      severity: 'danger'
+    });
+    modifyRelationship(target, champion.id, -60, allChampions);
+    events.push(...resolveCombatEvents(target, champion, allChampions));
   }
 
   return events;
@@ -645,29 +816,61 @@ export function handleAmbush(champion, target, allChampions) {
 
   champion.energy -= 25;
 
-  // Stealth vs awareness
-  const stealthRoll = champion.stats.stealth + champion.stats.cunning * 0.3 + randomFloat() * 20;
-  let awarenessRoll = target.stats.intelligence + target.stats.survival * 0.3 + randomFloat() * 20;
+  // Use stealth skill for ambush check
+  const stealthSkill = champion.skills?.stealth || 40;
 
+  // Target's awareness affects difficulty
+  const targetAwareness = (target.stats.intelligence + target.stats.survival) / 2;
   const keenSenses = getRacePassiveValue(target, 'detectionBonus');
-  if (keenSenses) {
-    awarenessRoll *= (1 + keenSenses.value);
-  }
+  const awarenessBonus = keenSenses ? targetAwareness * (1 + keenSenses.value) : targetAwareness;
+  const difficulty = 45 + awarenessBonus * 0.3;
 
-  if (stealthRoll > awarenessRoll) {
+  const successResult = calculateSuccessLevel(stealthSkill, difficulty);
+  const effects = applyAmbushSuccessEffects(successResult.successLevel);
+
+  if (successResult.successLevel === SUCCESS_LEVELS.CRITICAL_SUCCESS) {
+    // Critical success: devastating ambush
+    events.push({
+      type: 'ambush',
+      text: `${champion.name} executes a PERFECT ambush on ${target.name}!`,
+      severity: 'danger'
+    });
+
+    const ambushDamage = Math.round((random(25, 45) + champion.stats.strength * 0.3) * effects.damageMultiplier);
+    target.health -= ambushDamage;
+
+    events.push({
+      type: 'combat',
+      text: `${target.name} takes ${ambushDamage} devastating damage from the surprise critical strike!`
+    });
+
+    if (target.health <= 0) {
+      target.alive = false;
+      champion.kills++;
+      champion.daysSinceKill = 0;
+      events.push({
+        type: 'death',
+        text: `${target.name} is slain instantly!`,
+        severity: 'death'
+      });
+    } else {
+      target.energy -= 30; // Extra stun from critical
+      events.push(...resolveCombatEvents(champion, target, allChampions));
+    }
+  } else if (successResult.successLevel === SUCCESS_LEVELS.SUCCESS) {
+    // Success: standard ambush with surprise round
     events.push({
       type: 'ambush',
       text: `${champion.name} ambushes ${target.name} from the shadows!`,
       severity: 'danger'
     });
 
-    // Deal damage before combat starts
-    const ambushDamage = random(15, 30) + champion.stats.strength * 0.2;
+    const ambushDamage = Math.round((random(15, 30) + champion.stats.strength * 0.2) * effects.damageMultiplier);
     target.health -= ambushDamage;
 
     events.push({
       type: 'combat',
-      text: `${target.name} takes ${Math.round(ambushDamage)} damage from the surprise attack!`
+      text: `${target.name} takes ${ambushDamage} damage from the surprise attack!`
     });
 
     if (target.health <= 0) {
@@ -683,12 +886,42 @@ export function handleAmbush(champion, target, allChampions) {
       target.energy -= 20;
       events.push(...resolveCombatEvents(champion, target, allChampions));
     }
-  } else {
+  } else if (successResult.successLevel === SUCCESS_LEVELS.PARTIAL_SUCCESS) {
+    // Partial success: spotted at last moment, normal combat
+    events.push({
+      type: 'ambush',
+      text: `${champion.name} attempts to ambush ${target.name}, but is spotted at the last moment!`,
+      severity: 'warning'
+    });
+    modifyRelationship(target, champion.id, -25, allChampions);
+    events.push(...resolveCombatEvents(champion, target, allChampions));
+  } else if (successResult.successLevel === SUCCESS_LEVELS.FAILURE) {
+    // Failure: detected
     events.push({
       type: 'action',
       text: `${target.name} spots ${champion.name} trying to sneak up on them!`
     });
     modifyRelationship(target, champion.id, -30, allChampions);
+  } else if (successResult.successLevel === SUCCESS_LEVELS.CRITICAL_FAILURE) {
+    // Critical failure: target strikes first
+    events.push({
+      type: 'action',
+      text: `${target.name} anticipated the ambush! ${champion.name}'s attack is turned against them!`,
+      severity: 'danger'
+    });
+    modifyRelationship(target, champion.id, -40, allChampions);
+
+    // Target gets a free strike
+    const counterDamage = random(15, 25) + target.stats.strength * 0.2;
+    champion.health -= counterDamage;
+    events.push({
+      type: 'combat',
+      text: `${target.name} strikes first, dealing ${Math.round(counterDamage)} damage!`
+    });
+
+    if (champion.health > 0 && target.health > 0) {
+      events.push(...resolveCombatEvents(target, champion, allChampions));
+    }
   }
 
   return events;

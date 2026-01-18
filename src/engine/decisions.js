@@ -2,8 +2,74 @@
 
 import { random, randomFloat, pick } from '../utils';
 import { BATTLEFIELD_ZONES, hasRacePassive } from '../constants';
+import { getRelevantSkillForAction, getProficiencyDamageModifier } from '../constants/skills';
 import { areAllies, areEnemies, calculateCompatibility } from './relationships';
 import { getCombatPower } from './combat';
+
+/**
+ * Calculate how much a champion prefers an action based on their relevant skill
+ * @param {object} champion - The champion
+ * @param {string} actionType - The type of action
+ * @returns {number} - Multiplier between 0.7 and 1.5
+ */
+function calculateActionPreference(champion, actionType) {
+  const skillId = getRelevantSkillForAction(actionType);
+  if (!skillId || !champion.skills) return 1.0;
+
+  const skillLevel = champion.skills[skillId] || 0;
+  // 0.7 to 1.5 multiplier based on skill (0 = 0.7x, 100 = 1.5x)
+  return 0.7 + (skillLevel / 100) * 0.8;
+}
+
+/**
+ * Evaluate the best weapon for a champion based on proficiency
+ * @param {object} champion - The champion
+ * @returns {object|null} - The best weapon or null
+ */
+function evaluateWeaponChoice(champion) {
+  const weapons = champion.inventory.filter(i => i.combatBonus);
+  if (weapons.length === 0) return null;
+  if (weapons.length === 1) return weapons[0];
+
+  // Score weapons by: combatBonus * proficiencyModifier
+  let bestWeapon = weapons[0];
+  let bestScore = 0;
+
+  weapons.forEach(weapon => {
+    const category = weapon.category || 'blade';
+    const proficiency = champion.proficiencies?.[category] || 0;
+    const profMod = getProficiencyDamageModifier(proficiency);
+    const score = weapon.combatBonus * profMod;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestWeapon = weapon;
+    }
+  });
+
+  return bestWeapon;
+}
+
+/**
+ * Check if champion should prefer ranged or melee combat
+ * @param {object} champion - The champion
+ * @returns {string} - 'ranged' or 'melee'
+ */
+function preferredCombatStyle(champion) {
+  const archerySkill = champion.skills?.archery || 0;
+  const meleeSkill = champion.skills?.melee || 0;
+  const rangedProf = champion.proficiencies?.ranged || 0;
+  const meleeProfs = Math.max(
+    champion.proficiencies?.blade || 0,
+    champion.proficiencies?.blunt || 0,
+    champion.proficiencies?.polearm || 0
+  );
+
+  const rangedScore = archerySkill + rangedProf;
+  const meleeScore = meleeSkill + meleeProfs;
+
+  return rangedScore > meleeScore + 20 ? 'ranged' : 'melee';
+}
 
 export function decideAction(champion, nearbyChampions, allChampions, day, gameState) {
   const p = champion.personality;
@@ -15,6 +81,19 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
   const hasWeapon = champion.inventory.some(i => i.combatBonus);
   const combatCapable = getCombatPower(champion) > 40;
   const isStrong = getCombatPower(champion) > 60;
+
+  // Skill-based preferences
+  const meleePreference = calculateActionPreference(champion, 'hunt');
+  const stealthPreference = calculateActionPreference(champion, 'ambush');
+  const survivalPreference = calculateActionPreference(champion, 'forage');
+  const persuasionPreference = calculateActionPreference(champion, 'ally');
+  const medicinePreference = calculateActionPreference(champion, 'heal');
+  const intimidationPreference = calculateActionPreference(champion, 'intimidate');
+
+  // Preferred combat style based on skills
+  const combatStyle = preferredCombatStyle(champion);
+  const hasRangedWeapon = champion.inventory.some(i => i.category === 'ranged');
+  const preferRanged = combatStyle === 'ranged' && hasRangedWeapon;
 
   // Find potential allies and enemies nearby
   const nearbyAllies = nearbyChampions.filter(t => areAllies(champion, t));
@@ -120,10 +199,11 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
     }
   }
 
-  // CUNNING + STEALTHY: Ambush instead of direct combat
+  // CUNNING + STEALTHY: Ambush instead of direct combat (skill preference affects chance)
   if (p.cunning > 60 && champion.stats.stealth > 50 && nearbyEnemies.length > 0) {
     const ambushTarget = nearbyEnemies.find(t => !hasRacePassive(t, 'ambushImmunity'));
-    if (ambushTarget && randomFloat() < 0.3) {
+    const ambushChance = 0.3 * stealthPreference; // Skilled stealthers more likely to ambush
+    if (ambushTarget && randomFloat() < ambushChance) {
       return { type: 'ambush', target: ambushTarget };
     }
   }
@@ -136,19 +216,21 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
     }
   }
 
-  // INTIMIDATING: Try to scare off weaker opponents
+  // INTIMIDATING: Try to scare off weaker opponents (skill preference affects chance)
   if ((p.aggression > 50 || p.pride > 60) && isStrong && nearbyChampions.length > 0) {
     const weakerTarget = nearbyChampions.find(t => getCombatPower(t) < getCombatPower(champion) * 0.7);
-    if (weakerTarget && randomFloat() < 0.2) {
+    const intimidateChance = 0.2 * intimidationPreference; // Skilled intimidators more likely to try
+    if (weakerTarget && randomFloat() < intimidateChance) {
       return { type: 'intimidate', target: weakerTarget };
     }
   }
 
-  // EMPATHETIC: Offer mercy to wounded enemies, help allies
-  if (p.empathy > 70) {
-    // Help wounded allies first
+  // EMPATHETIC: Offer mercy to wounded enemies, help allies (medicine skill affects priority)
+  if (p.empathy > 70 || medicinePreference > 1.2) {
+    // Help wounded allies first - skilled healers are more proactive
     if (nearbyAllies.length > 0) {
-      const needyAlly = nearbyAllies.find(a => a.health < 40 || a.hunger < 30);
+      const healthThreshold = 40 + (medicinePreference - 1) * 20; // Skilled healers help at higher health
+      const needyAlly = nearbyAllies.find(a => a.health < healthThreshold || a.hunger < 30);
       if (needyAlly && champion.inventory.some(i => i.healAmount || i.hungerRestore)) {
         return { type: 'help_ally', target: needyAlly };
       }
@@ -156,7 +238,8 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
     // Offer mercy to badly wounded enemies
     if (nearbyWounded.length > 0 && p.ruthlessness < 40) {
       const mercyTarget = nearbyWounded.find(t => !areAllies(champion, t));
-      if (mercyTarget && randomFloat() < 0.3) {
+      const mercyChance = 0.3 * persuasionPreference; // Persuasive characters more likely to offer mercy
+      if (mercyTarget && randomFloat() < mercyChance) {
         return { type: 'mercy', target: mercyTarget };
       }
     }
@@ -210,11 +293,12 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
     }
   }
 
-  // THEFT: Cunning and desperate or greedy
+  // THEFT: Cunning and desperate or greedy (stealth skill affects chance)
   if (p.cunning > 50 && champion.stats.stealth > 40 && nearbyChampions.length > 0) {
     const theftTarget = nearbyChampions.find(t => t.inventory.length > 0 && !areAllies(champion, t));
     if (theftTarget) {
-      const theftChance = (desperateForFood || desperateForWater) ? 0.4 : (p.ruthlessness > 60 ? 0.2 : 0.1);
+      const baseChance = (desperateForFood || desperateForWater) ? 0.4 : (p.ruthlessness > 60 ? 0.2 : 0.1);
+      const theftChance = baseChance * stealthPreference; // Skilled thieves are more likely to attempt
       if (randomFloat() < theftChance) {
         return { type: 'theft', target: theftTarget };
       }
@@ -258,13 +342,14 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
     }
   }
 
-  // SOCIABLE: More likely to seek alliances
+  // SOCIABLE: More likely to seek alliances (persuasion skill affects chance)
   if (p.sociability > 55 && p.loyalty > 40 && nearbyNeutrals.length > 0) {
     const potential = nearbyNeutrals.find(t => {
       const compatibility = calculateCompatibility(champion, t);
       return compatibility > 0 || t.realm === champion.realm;
     });
-    if (potential && randomFloat() < (p.sociability / 150)) {
+    const allyChance = (p.sociability / 150) * persuasionPreference; // Persuasive characters seek alliances more
+    if (potential && randomFloat() < allyChance) {
       return { type: 'ally', target: potential };
     }
   }
@@ -303,7 +388,9 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
     return { type: 'move', target: pick(BATTLEFIELD_ZONES), reason: 'hunting_grounds' };
   }
 
-  if (randomFloat() < 0.5) {
+  // Default foraging - skilled foragers are more likely to choose this
+  const forageChance = 0.5 * survivalPreference;
+  if (randomFloat() < forageChance) {
     return { type: 'forage' };
   }
 
