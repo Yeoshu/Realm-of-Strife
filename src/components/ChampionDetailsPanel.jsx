@@ -1,5 +1,6 @@
 import React from 'react';
 import { BATTLEFIELD_ZONES, RACES } from '../constants';
+import { DEITIES, getFavorStatus, getFavorStatusColor } from '../constants/deities';
 import { getRelationship } from '../engine';
 import { generatePersonalityDescription } from '../constants/personality';
 
@@ -107,6 +108,17 @@ function getLogOutcome(event, championName) {
   return null;
 }
 
+function getFavorBarColor(favor) {
+  if (favor >= 75) return 'bg-yellow-400';
+  if (favor >= 50) return 'bg-yellow-500';
+  if (favor >= 25) return 'bg-amber-500';
+  if (favor >= 0) return 'bg-stone-500';
+  if (favor >= -25) return 'bg-orange-500';
+  if (favor >= -50) return 'bg-red-500';
+  if (favor >= -75) return 'bg-red-600';
+  return 'bg-red-700';
+}
+
 export function ChampionDetailsPanel({ selectedChampion, livingChampions, events, onViewCombatLog }) {
   if (!selectedChampion) return null;
 
@@ -175,6 +187,96 @@ export function ChampionDetailsPanel({ selectedChampion, livingChampions, events
             </div>
           )}
         </div>
+
+        {/* Patron Deity */}
+        {selectedChampion.patronDeity && (
+          <div className="bg-stone-800/50 rounded p-2">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <span className="text-sm font-bold text-amber-400">
+                  {DEITIES[selectedChampion.patronDeity]?.name}
+                </span>
+                <span className="text-xs text-stone-400 ml-2">
+                  ({DEITIES[selectedChampion.patronDeity]?.domain})
+                </span>
+              </div>
+              <span className={`text-xs font-bold capitalize ${getFavorStatusColor(getFavorStatus(selectedChampion.deityFavor))}`}>
+                {getFavorStatus(selectedChampion.deityFavor)}
+              </span>
+            </div>
+
+            {/* Favor Bar */}
+            <div className="mb-2">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-stone-500 w-12">Favor</span>
+                <div className="flex-1 h-2 bg-stone-700 rounded-full overflow-hidden relative">
+                  {/* Center marker */}
+                  <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-stone-500 z-10" />
+                  {/* Favor bar */}
+                  {selectedChampion.deityFavor >= 0 ? (
+                    <div
+                      className={`h-full ${getFavorBarColor(selectedChampion.deityFavor)} absolute left-1/2`}
+                      style={{ width: `${(selectedChampion.deityFavor / 150) * 50}%` }}
+                    />
+                  ) : (
+                    <div
+                      className={`h-full ${getFavorBarColor(selectedChampion.deityFavor)} absolute right-1/2`}
+                      style={{ width: `${(Math.abs(selectedChampion.deityFavor) / 150) * 50}%` }}
+                    />
+                  )}
+                </div>
+                <span className="text-stone-400 w-8 text-right">{selectedChampion.deityFavor}</span>
+              </div>
+            </div>
+
+            {/* Blessings */}
+            {selectedChampion.blessings && selectedChampion.blessings.length > 0 && (
+              <div className="mb-1">
+                <span className="text-xs text-amber-500 font-bold">Blessings: </span>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {selectedChampion.blessings.map((blessing, i) => (
+                    <span
+                      key={i}
+                      className="px-2 py-0.5 bg-amber-900/50 border border-amber-700/50 rounded text-xs text-amber-300"
+                      title={blessing.description}
+                    >
+                      {blessing.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Curses */}
+            {selectedChampion.curses && selectedChampion.curses.length > 0 && (
+              <div>
+                <span className="text-xs text-red-500 font-bold">Curses: </span>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {selectedChampion.curses.map((curse, i) => (
+                    <span
+                      key={i}
+                      className="px-2 py-0.5 bg-red-900/50 border border-red-700/50 rounded text-xs text-red-300"
+                      title={curse.description}
+                    >
+                      {curse.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* No Deity / Godless */}
+        {!selectedChampion.patronDeity && selectedChampion.alive && (
+          <div className="bg-stone-800/30 rounded p-2">
+            <span className="text-xs text-stone-500 italic">
+              {selectedChampion.abandonedBy && selectedChampion.abandonedBy.length > 0
+                ? `Abandoned by the gods (${selectedChampion.abandonedBy.map(id => DEITIES[id]?.name).join(', ')})`
+                : 'Godless - worships no deity'}
+            </span>
+          </div>
+        )}
 
         {selectedChampion.alive && (
           <>

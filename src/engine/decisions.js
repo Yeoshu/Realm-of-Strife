@@ -3,9 +3,11 @@
 import { random, randomFloat, pick } from '../utils';
 import { BATTLEFIELD_ZONES, hasRacePassive } from '../constants';
 import { getRelevantSkillForAction, getProficiencyDamageModifier } from '../constants/skills';
+import { DEITIES } from '../constants/deities';
 import { areAllies, areEnemies, calculateCompatibility } from './relationships';
 import { getCombatPower } from './combat';
 import { ARCHETYPE_ACTIONS } from './archetypeActions';
+import { isAllianceForbidden } from './blessings';
 
 /**
  * Calculate how much a champion prefers an action based on their relevant skill
@@ -70,6 +72,34 @@ function preferredCombatStyle(champion) {
   const meleeScore = meleeSkill + meleeProfs;
 
   return rangedScore > meleeScore + 20 ? 'ranged' : 'melee';
+}
+
+/**
+ * Get deity action weight modifier for an action type
+ * @param {number} baseChance - The base chance for the action (0-1)
+ * @param {string} actionType - The type of action
+ * @param {object} champion - The champion
+ * @returns {number} - Modified chance
+ */
+function getDeityActionWeight(baseChance, actionType, champion) {
+  if (!champion.patronDeity) return baseChance;
+
+  const deity = DEITIES[champion.patronDeity];
+  if (!deity) return baseChance;
+
+  const pietyInfluence = champion.personality.piety / 100;
+
+  if (deity.preferredActions.includes(actionType)) {
+    // Increase chance for deity-preferred actions based on piety
+    return baseChance * (1 + pietyInfluence * 0.5);
+  }
+
+  if (deity.dislikedActions.includes(actionType)) {
+    // Decrease chance for deity-disliked actions based on piety
+    return baseChance * (1 - pietyInfluence * 0.5);
+  }
+
+  return baseChance;
 }
 
 export function decideAction(champion, nearbyChampions, allChampions, day, gameState) {
@@ -312,7 +342,8 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
     const target = grudgeTargets.reduce((worst, t) =>
       (champion.relationships[t.id] || 0) < (champion.relationships[worst.id] || 0) ? t : worst
     , grudgeTargets[0]);
-    if (randomFloat() < p.vendetta / 100) {
+    const vendettaChance = getDeityActionWeight(p.vendetta / 100, 'hunt', champion);
+    if (randomFloat() < vendettaChance) {
       if (hasStrongAlliance && randomFloat() < 0.5) {
         return { type: 'group_hunt', group: allyGroup, target };
       }
@@ -338,10 +369,11 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
     }
   }
 
-  // CUNNING + STEALTHY: Ambush instead of direct combat (skill preference affects chance)
+  // CUNNING + STEALTHY: Ambush instead of direct combat (skill and deity preferences affect chance)
   if (p.cunning > 60 && champion.stats.stealth > 50 && nearbyEnemies.length > 0) {
     const ambushTarget = nearbyEnemies.find(t => !hasRacePassive(t, 'ambushImmunity'));
-    const ambushChance = 0.3 * stealthPreference; // Skilled stealthers more likely to ambush
+    const baseAmbushChance = 0.3 * stealthPreference; // Skilled stealthers more likely to ambush
+    const ambushChance = getDeityActionWeight(baseAmbushChance, 'ambush', champion);
     if (ambushTarget && randomFloat() < ambushChance) {
       return { type: 'ambush', target: ambushTarget };
     }
@@ -364,20 +396,22 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
     }
   }
 
-  // EMPATHETIC: Offer mercy to wounded enemies, help allies (medicine skill affects priority)
+  // EMPATHETIC: Offer mercy to wounded enemies, help allies (medicine skill and deity affect priority)
   if (p.empathy > 70 || medicinePreference > 1.2) {
     // Help wounded allies first - skilled healers are more proactive
     if (nearbyAllies.length > 0) {
       const healthThreshold = 40 + (medicinePreference - 1) * 20; // Skilled healers help at higher health
       const needyAlly = nearbyAllies.find(a => a.health < healthThreshold || a.hunger < 30);
-      if (needyAlly && champion.inventory.some(i => i.healAmount || i.hungerRestore)) {
+      const helpChance = getDeityActionWeight(0.8, 'help_ally', champion);
+      if (needyAlly && champion.inventory.some(i => i.healAmount || i.hungerRestore) && randomFloat() < helpChance) {
         return { type: 'help_ally', target: needyAlly };
       }
     }
     // Offer mercy to badly wounded enemies
     if (nearbyWounded.length > 0 && p.ruthlessness < 40) {
       const mercyTarget = nearbyWounded.find(t => !areAllies(champion, t));
-      const mercyChance = 0.3 * persuasionPreference; // Persuasive characters more likely to offer mercy
+      const baseMercyChance = 0.3 * persuasionPreference; // Persuasive characters more likely to offer mercy
+      const mercyChance = getDeityActionWeight(baseMercyChance, 'mercy', champion);
       if (mercyTarget && randomFloat() < mercyChance) {
         return { type: 'mercy', target: mercyTarget };
       }
@@ -398,15 +432,18 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
     return { type: 'taunt', target: pick(nearbyEnemies) };
   }
 
-  // COWARDLY: Flee from any threat
+  // COWARDLY: Flee from any threat (deity affects likelihood to hide/flee)
   if (p.bravery < 30 && nearbyChampions.length > 0) {
     const threats = nearbyChampions.filter(t => getCombatPower(t) > getCombatPower(champion) * 0.8);
     if (threats.length > 0) {
+      const hideChance = getDeityActionWeight(0.6, 'hide', champion);
       const saferZone = BATTLEFIELD_ZONES.find(z => z.id !== champion.zone && z.danger < 0.3);
-      if (saferZone) {
+      if (saferZone && randomFloat() < hideChance) {
         return { type: 'move', target: saferZone, reason: 'flee' };
       }
-      return { type: 'hide', reason: 'fear' };
+      if (randomFloat() < hideChance) {
+        return { type: 'hide', reason: 'fear' };
+      }
     }
   }
 
@@ -420,13 +457,14 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
     return { type: 'hunt', target: pick(nearbyEnemies) };
   }
 
-  // BETRAYAL: Low loyalty + high cunning + high ruthlessness
+  // BETRAYAL: Low loyalty + high cunning + high ruthlessness (deity affects likelihood)
   if (nearbyAllies.length > 0 && p.loyalty < 35 && p.cunning > 55 && p.ruthlessness > 50) {
     const targetAlly = nearbyAllies.find(a =>
       a.inventory.length > champion.inventory.length ||
       (a.health < champion.health && p.ruthlessness > 70)
     );
-    const betrayChance = ((100 - p.loyalty) + p.ruthlessness + p.cunning) / 400;
+    const baseChance = ((100 - p.loyalty) + p.ruthlessness + p.cunning) / 400;
+    const betrayChance = getDeityActionWeight(baseChance, 'betray', champion);
     if (targetAlly && randomFloat() < betrayChance) {
       return { type: 'betray', target: targetAlly };
     }
@@ -481,13 +519,14 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
     }
   }
 
-  // SOCIABLE: More likely to seek alliances (persuasion skill affects chance)
-  if (p.sociability > 55 && p.loyalty > 40 && nearbyNeutrals.length > 0) {
+  // SOCIABLE: More likely to seek alliances (persuasion skill and deity affect chance)
+  if (p.sociability > 55 && p.loyalty > 40 && nearbyNeutrals.length > 0 && !isAllianceForbidden(champion)) {
     const potential = nearbyNeutrals.find(t => {
       const compatibility = calculateCompatibility(champion, t);
       return compatibility > 0 || t.realm === champion.realm;
     });
-    const allyChance = (p.sociability / 150) * persuasionPreference; // Persuasive characters seek alliances more
+    const baseAllyChance = (p.sociability / 150) * persuasionPreference; // Persuasive characters seek alliances more
+    const allyChance = getDeityActionWeight(baseAllyChance, 'ally', champion);
     if (potential && randomFloat() < allyChance) {
       return { type: 'ally', target: potential };
     }
@@ -501,10 +540,11 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
     }
   }
 
-  // Hunt if aggressive and capable
+  // Hunt if aggressive and capable (deity affects likelihood)
   if (p.aggression > 50 && combatCapable && nearbyChampions.length > 0) {
     const weakTarget = nearbyChampions.find(t => getCombatPower(t) < getCombatPower(champion) * 0.7);
-    if (weakTarget && !(p.empathy > 65 && (champion.relationships[weakTarget.id] || 0) > 0)) {
+    const huntChance = getDeityActionWeight(0.7, 'hunt', champion);
+    if (weakTarget && !(p.empathy > 65 && (champion.relationships[weakTarget.id] || 0) > 0) && randomFloat() < huntChance) {
       return { type: 'hunt', target: weakTarget };
     }
   }
@@ -527,8 +567,9 @@ export function decideAction(champion, nearbyChampions, allChampions, day, gameS
     return { type: 'move', target: pick(BATTLEFIELD_ZONES), reason: 'hunting_grounds' };
   }
 
-  // Default foraging - skilled foragers are more likely to choose this
-  const forageChance = 0.5 * survivalPreference;
+  // Default foraging - skilled foragers and nature deity worshippers prefer this
+  const baseForageChance = 0.5 * survivalPreference;
+  const forageChance = getDeityActionWeight(baseForageChance, 'forage', champion);
   if (randomFloat() < forageChance) {
     return { type: 'forage' };
   }
