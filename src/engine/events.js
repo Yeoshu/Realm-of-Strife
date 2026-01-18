@@ -38,7 +38,7 @@ export function generateEvent(champion, allChampions, day, gameState) {
   const noHungerThirst = hasRacePassive(champion, 'noHungerThirst');
   if (!noHungerThirst) {
     champion.hunger -= random(8, 15);
-    champion.thirst -= random(10, 18);
+    champion.thirst -= random(8, 14);
   }
   champion.energy -= random(5, 12);
   champion.daysAlive++;

@@ -105,7 +105,7 @@ function getDeityActionWeight(baseChance, actionType, champion) {
 export function decideAction(champion, nearbyChampions, allChampions, day, gameState) {
   const p = champion.personality;
   const desperateForFood = champion.hunger < 30;
-  const desperateForWater = champion.thirst < 30;
+  const desperateForWater = champion.thirst < 40;
   const injured = champion.health < 50;
   const badlyInjured = champion.health < 30;
   const exhausted = champion.energy < 30;
