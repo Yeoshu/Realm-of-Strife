@@ -19,8 +19,98 @@ function getRelationshipDisplay(champion, other) {
   return { text: 'Enemy', color: 'text-red-400' };
 }
 
-export function ChampionDetailsPanel({ selectedChampion, livingChampions }) {
+function getCharacterLogs(events, championName) {
+  if (!events || !championName) return [];
+
+  return events
+    .filter(event => {
+      // Check if champion is killer or victim in death events
+      if (event.killer === championName || event.victim === championName) return true;
+
+      // Check if champion appears in combat log entries
+      if (event.combatLog && Array.isArray(event.combatLog)) {
+        return event.combatLog.some(entry =>
+          entry.attacker === championName ||
+          entry.defender === championName ||
+          entry.champion === championName
+        );
+      }
+
+      return false;
+    })
+    .sort((a, b) => {
+      // Sort by day if available, otherwise maintain order
+      const dayA = a.day || 0;
+      const dayB = b.day || 0;
+      return dayA - dayB;
+    });
+}
+
+function getLogSummary(event, championName) {
+  if (!event.combatLog || !Array.isArray(event.combatLog)) {
+    return event.text || 'Unknown event';
+  }
+
+  const header = event.combatLog.find(e => e.type === 'header');
+  if (header) return header.text;
+
+  return event.text || 'Combat encounter';
+}
+
+function getLogOutcome(event, championName) {
+  if (!event.combatLog) return null;
+
+  // Use event-level victim/killer if available (most reliable)
+  if (event.victim === championName) {
+    return { text: 'DIED', color: 'text-red-500' };
+  }
+  if (event.killer === championName) {
+    return { text: 'KILLED', color: 'text-emerald-500' };
+  }
+
+  // Check fatal entries - these indicate who received a killing blow
+  const fatalEntry = event.combatLog.find(e => e.type === 'fatal');
+  if (fatalEntry) {
+    if (fatalEntry.defender === championName) {
+      return { text: 'DIED', color: 'text-red-500' };
+    }
+    if (fatalEntry.attacker === championName) {
+      return { text: 'KILLED', color: 'text-emerald-500' };
+    }
+  }
+
+  const deathEntry = event.combatLog.find(e => e.type === 'death');
+  const victoryEntry = event.combatLog.find(e => e.type === 'victory');
+
+  if (victoryEntry) {
+    if (victoryEntry.text?.includes(championName)) {
+      return { text: 'WON', color: 'text-emerald-400' };
+    }
+    // If there's a death but champion is in victory, they won
+    if (deathEntry && !deathEntry.text?.includes(championName)) {
+      return { text: 'KILLED', color: 'text-emerald-500' };
+    }
+    return { text: 'LOST', color: 'text-orange-400' };
+  }
+
+  if (deathEntry) {
+    if (deathEntry.text?.includes(championName)) {
+      return { text: 'DIED', color: 'text-red-500' };
+    }
+  }
+
+  const disengageEntry = event.combatLog.find(e => e.type === 'disengage');
+  if (disengageEntry) {
+    return { text: 'FLED', color: 'text-yellow-400' };
+  }
+
+  return null;
+}
+
+export function ChampionDetailsPanel({ selectedChampion, livingChampions, events, onViewCombatLog }) {
   if (!selectedChampion) return null;
+
+  const characterLogs = getCharacterLogs(events, selectedChampion.name);
 
   return (
     <>
@@ -213,6 +303,37 @@ export function ChampionDetailsPanel({ selectedChampion, livingChampions }) {
             </div>
           </div>
         </div>
+
+        {/* Combat History */}
+        {characterLogs.length > 0 && (
+          <div className="pt-2 border-t border-stone-700">
+            <h3 className="text-sm font-bold text-stone-400 mb-2">COMBAT HISTORY</h3>
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {characterLogs.map((event, i) => {
+                const outcome = getLogOutcome(event, selectedChampion.name);
+                return (
+                  <div
+                    key={event.combatId || i}
+                    className="flex items-center gap-2 p-2 bg-stone-800/50 rounded hover:bg-stone-800 cursor-pointer transition-colors"
+                    onClick={() => onViewCombatLog && onViewCombatLog(event.combatLog)}
+                  >
+                    {event.day && (
+                      <span className="text-xs text-stone-500 shrink-0">Day {event.day}</span>
+                    )}
+                    <span className="text-xs text-stone-300 truncate flex-1 min-w-0">
+                      {getLogSummary(event, selectedChampion.name)}
+                    </span>
+                    {outcome && (
+                      <span className={`text-xs font-bold ${outcome.color} shrink-0`}>
+                        {outcome.text}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
