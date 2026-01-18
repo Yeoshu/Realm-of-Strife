@@ -6,3 +6,5 @@ export * from './groups';
 export * from './actions';
 export * from './decisions';
 export * from './events';
+export * from './deity';
+export * from './blessings';

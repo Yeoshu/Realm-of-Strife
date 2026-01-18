@@ -5,6 +5,7 @@ import { BATTLEFIELD_ZONES, ITEMS, getRacePassiveValue, hasRacePassive } from '.
 import { modifyRelationship, areAllies } from './relationships';
 import { resolveCombat } from './combat';
 import { decideAction } from './decisions';
+import { updateDeityFavor, applyDivineStatusEffects, checkDivineDeathSave } from './deity';
 import {
   handleHunting, handleForaging, handleHiding, handleMovement,
   handleAllianceAttempt, handleBetrayal, handleHealing, handleResting,
@@ -48,6 +49,10 @@ export function generateEvent(champion, allChampions, day, gameState) {
   if (healthRegen && champion.health < 100) {
     champion.health = clamp(champion.health + healthRegen.value, 0, 100);
   }
+
+  // Apply divine status effects (blessings/curses)
+  const divineStatusEvents = applyDivineStatusEffects(champion);
+  events.push(...divineStatusEvents);
 
   // Race passive - zone damage (vampire/undead in sunlight)
   const zoneDamage = getRacePassiveValue(champion, 'zoneDamage');
@@ -103,6 +108,7 @@ export function generateEvent(champion, allChampions, day, gameState) {
 
   // Check for death from status
   if (champion.health <= 0) {
+    // Check race death save first
     if (deathSave && randomFloat() < deathSave.value) {
       champion.health = 1;
       events.push({
@@ -110,14 +116,21 @@ export function generateEvent(champion, allChampions, day, gameState) {
         text: `${champion.name} miraculously clings to life through sheer luck!`,
         severity: 'success'
       });
-    } else {
-      champion.alive = false;
-      events.push({
-        type: 'death',
-        text: `${champion.name} from ${champion.realmName} has died from their injuries and exhaustion.`,
-        severity: 'death'
-      });
-      return events;
+    }
+    // Check divine death save
+    else {
+      const divineDeathSave = checkDivineDeathSave(champion);
+      if (divineDeathSave) {
+        events.push(divineDeathSave);
+      } else {
+        champion.alive = false;
+        events.push({
+          type: 'death',
+          text: `${champion.name} from ${champion.realmName} has died from their injuries and exhaustion.`,
+          severity: 'death'
+        });
+        return events;
+      }
     }
   }
 
@@ -238,6 +251,47 @@ export function generateEvent(champion, allChampions, day, gameState) {
     case 'archetype_gambit':
       events.push(...handleHedgeKnightGambit(champion, action.target, allChampions));
       break;
+  }
+
+  // Update deity favor based on action performed
+  if (champion.patronDeity) {
+    // Build context for favor update
+    const favorContext = {};
+
+    // Check if any events include a kill
+    const hasKill = events.some(e => e.type === 'death' && e.killer === champion.name);
+    if (hasKill) {
+      favorContext.kill = true;
+      // Check if it was a grudge kill
+      if (action.target && champion.grudges?.[action.target.id]) {
+        favorContext.grudgeKill = true;
+      }
+    }
+
+    // Check for mercy given
+    if (action.type === 'mercy') {
+      favorContext.mercyGiven = true;
+    }
+
+    // Check for betrayal
+    if (action.type === 'betray') {
+      favorContext.betrayal = true;
+    }
+
+    // Check for ally helped
+    if (action.type === 'help_ally' || action.type === 'defend_ally') {
+      favorContext.allyHelped = true;
+    }
+
+    const favorResult = updateDeityFavor(champion, action.type, favorContext);
+    if (favorResult) {
+      if (favorResult.event) {
+        events.push(favorResult.event);
+      }
+      if (favorResult.thresholdEvent) {
+        events.push(favorResult.thresholdEvent);
+      }
+    }
   }
 
   // Alliance tension and morale checks

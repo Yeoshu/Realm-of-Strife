@@ -3,6 +3,7 @@
 import { random, randomFloat, pick, clamp, generateId } from '../utils';
 import { REALM_NAMES, FIRST_NAMES, RACES, CHAMPION_ARCHETYPES, BACKSTORY_TEMPLATES } from '../constants';
 import { calculateSkill, calculateProficiency, SKILLS, WEAPON_PROFICIENCY_CATEGORIES } from '../constants/skills';
+import { DEITIES, PIETY_THRESHOLDS, ARCHETYPE_DEITY_AFFINITY } from '../constants/deities';
 import { modifyRelationship } from './relationships';
 
 export function generateChampion(realm, usedNames) {
@@ -59,7 +60,8 @@ export function generateChampion(realm, usedNames) {
     ruthlessness: clamp(random(20, 80) + (archetype.traitBias.ruthlessness || 0), 5, 95),
     sociability: clamp(random(20, 80) + (archetype.traitBias.sociability || 0), 5, 95),
     impulsiveness: clamp(random(20, 80) + (archetype.traitBias.impulsiveness || 0), 5, 95),
-    vendetta: clamp(random(15, 70) + (archetype.traitBias.vendetta || 0), 5, 95)
+    vendetta: clamp(random(15, 70) + (archetype.traitBias.vendetta || 0), 5, 95),
+    piety: clamp(random(20, 80) + (archetype.traitBias.piety || 0), 5, 95)
   };
 
   // Generate backstory (1-2 elements)
@@ -140,6 +142,27 @@ export function generateChampion(realm, usedNames) {
     );
   });
 
+  // Select patron deity based on piety and archetype affinity
+  let patronDeity = null;
+  if (personality.piety >= PIETY_THRESHOLDS.godless) {
+    // Higher piety = more likely to have a deity
+    const deityChance = (personality.piety - PIETY_THRESHOLDS.godless) / (100 - PIETY_THRESHOLDS.godless);
+    if (randomFloat() < deityChance + 0.3) { // Base 30% chance + piety bonus
+      // Get archetype deity affinities
+      const affinities = ARCHETYPE_DEITY_AFFINITY[archetype.id] || [];
+      const deityIds = Object.keys(DEITIES);
+
+      // Weight selection toward affinity deities
+      if (affinities.length > 0 && randomFloat() < 0.7) {
+        // 70% chance to pick from affinity deities
+        patronDeity = pick(affinities);
+      } else {
+        // Random deity
+        patronDeity = pick(deityIds);
+      }
+    }
+  }
+
   return {
     id: generateId(),
     name,
@@ -207,7 +230,14 @@ export function generateChampion(realm, usedNames) {
     proficiencies,
 
     // Track who wronged them (for vendetta system)
-    grudges: {}
+    grudges: {},
+
+    // Deity system
+    patronDeity,
+    deityFavor: 0,
+    blessings: [],
+    curses: [],
+    abandonedBy: []
   };
 }
 

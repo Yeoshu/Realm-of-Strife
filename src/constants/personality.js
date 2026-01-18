@@ -12,7 +12,8 @@ export const PERSONALITY_TRAITS = {
   ruthlessness: { low: 'merciful', mid: 'practical', high: 'merciless' },
   sociability: { low: 'loner', mid: 'selective', high: 'gregarious' },
   impulsiveness: { low: 'calculating', mid: 'balanced', high: 'reckless' },
-  vendetta: { low: 'forgiving', mid: 'remembers', high: 'vengeful' }
+  vendetta: { low: 'forgiving', mid: 'remembers', high: 'vengeful' },
+  piety: { low: 'godless', mid: 'observant', high: 'devout' }
 };
 
 export const CHAMPION_ARCHETYPES = [
@@ -21,7 +22,7 @@ export const CHAMPION_ARCHETYPES = [
     name: 'Knight',
     description: 'Trained in the arts of war since youth',
     realms: [1, 2, 4],
-    traitBias: { aggression: 30, bravery: 25, ruthlessness: 25, pride: 20, empathy: -20 },
+    traitBias: { aggression: 30, bravery: 25, ruthlessness: 25, pride: 20, empathy: -20, piety: 10 },
     skillBonuses: { melee: 25, tactics: 15, intimidation: 10 },
     proficiencyBonuses: { blade: 30, polearm: 15 },
     rare: false
@@ -31,7 +32,7 @@ export const CHAMPION_ARCHETYPES = [
     name: 'Reluctant Hero',
     description: 'Thrust into battle against their will',
     realms: [3, 5, 6, 7, 8],
-    traitBias: { empathy: 30, loyalty: 20, aggression: -25, ruthlessness: -20 },
+    traitBias: { empathy: 30, loyalty: 20, aggression: -25, ruthlessness: -20, piety: 5 },
     skillBonuses: { survival: 15, persuasion: 10 },
     proficiencyBonuses: { blade: 10 },
     rare: false
@@ -41,7 +42,7 @@ export const CHAMPION_ARCHETYPES = [
     name: 'Ranger',
     description: 'Hardened by the wilderness',
     realms: [6, 7, 10, 11, 12],
-    traitBias: { cunning: 25, ruthlessness: 15, loyalty: -15, impulsiveness: -20 },
+    traitBias: { cunning: 25, ruthlessness: 15, loyalty: -15, impulsiveness: -20, piety: 0 },
     skillBonuses: { survival: 25, archery: 20, stealth: 15 },
     proficiencyBonuses: { ranged: 25, blade: 10 },
     rare: false
@@ -51,7 +52,7 @@ export const CHAMPION_ARCHETYPES = [
     name: 'Guardian',
     description: 'Sworn to protect the innocent',
     realms: [3, 5, 8, 9, 11, 12],
-    traitBias: { loyalty: 35, empathy: 25, bravery: 20, sociability: 15 },
+    traitBias: { loyalty: 35, empathy: 25, bravery: 20, sociability: 15, piety: 15 },
     skillBonuses: { melee: 20, medicine: 15, tactics: 10 },
     proficiencyBonuses: { blade: 20, polearm: 15 },
     rare: false
@@ -61,7 +62,7 @@ export const CHAMPION_ARCHETYPES = [
     name: 'Courtier',
     description: 'Master of intrigue and manipulation',
     realms: [1, 3, 5, 8],
-    traitBias: { cunning: 35, impulsiveness: -30, sociability: 20, loyalty: -15 },
+    traitBias: { cunning: 35, impulsiveness: -30, sociability: 20, loyalty: -15, piety: -5 },
     skillBonuses: { persuasion: 30, intimidation: 15, stealth: 10 },
     proficiencyBonuses: { blade: 15 },
     rare: false
@@ -71,7 +72,7 @@ export const CHAMPION_ARCHETYPES = [
     name: 'Berserker',
     description: 'Warrior possessed by battle fury',
     realms: [2, 6, 7, 10],
-    traitBias: { aggression: 40, bravery: 30, impulsiveness: 25, cunning: -20 },
+    traitBias: { aggression: 40, bravery: 30, impulsiveness: 25, cunning: -20, piety: -10 },
     skillBonuses: { melee: 30, intimidation: 20 },
     proficiencyBonuses: { blade: 25, blunt: 20, unarmed: 15 },
     rare: true
@@ -81,7 +82,7 @@ export const CHAMPION_ARCHETYPES = [
     name: 'Healer',
     description: 'Bound by oath to do no harm',
     realms: [3, 8, 9, 11, 12],
-    traitBias: { empathy: 40, aggression: -40, ruthlessness: -35, loyalty: 20 },
+    traitBias: { empathy: 40, aggression: -40, ruthlessness: -35, loyalty: 20, piety: 25 },
     skillBonuses: { medicine: 35, persuasion: 15, survival: 10 },
     proficiencyBonuses: {},
     rare: true
@@ -91,7 +92,7 @@ export const CHAMPION_ARCHETYPES = [
     name: 'Tourney Champion',
     description: 'Lives for glory and renown',
     realms: [1, 4, 8],
-    traitBias: { pride: 30, sociability: 25, cunning: 20, bravery: 15 },
+    traitBias: { pride: 30, sociability: 25, cunning: 20, bravery: 15, piety: -5 },
     skillBonuses: { melee: 25, intimidation: 15, tactics: 10 },
     proficiencyBonuses: { blade: 25, polearm: 20 },
     rare: false
@@ -101,7 +102,7 @@ export const CHAMPION_ARCHETYPES = [
     name: 'Assassin',
     description: 'Death from the shadows',
     realms: [3, 5, 6, 8, 12],
-    traitBias: { cunning: 25, sociability: -30, impulsiveness: -20 },
+    traitBias: { cunning: 25, sociability: -30, impulsiveness: -20, piety: -15 },
     skillBonuses: { stealth: 30, melee: 15 },
     proficiencyBonuses: { blade: 25, ranged: 15 },
     rare: false
@@ -111,7 +112,7 @@ export const CHAMPION_ARCHETYPES = [
     name: 'Madman',
     description: 'Touched by chaos itself',
     realms: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-    traitBias: { impulsiveness: 35, cunning: -15 },
+    traitBias: { impulsiveness: 35, cunning: -15, piety: -30 },
     skillBonuses: { intimidation: 15 },
     proficiencyBonuses: { unarmed: 20 },
     rare: true
@@ -121,7 +122,7 @@ export const CHAMPION_ARCHETYPES = [
     name: 'Paladin',
     description: 'Holy warrior of unwavering virtue',
     realms: [1, 4, 5, 9],
-    traitBias: { loyalty: 30, empathy: 25, pride: 20, ruthlessness: -30, cunning: -15 },
+    traitBias: { loyalty: 30, empathy: 25, pride: 20, ruthlessness: -30, cunning: -15, piety: 35 },
     skillBonuses: { melee: 25, medicine: 15, persuasion: 10 },
     proficiencyBonuses: { blade: 30, blunt: 15 },
     rare: true
@@ -131,7 +132,7 @@ export const CHAMPION_ARCHETYPES = [
     name: 'Reaver',
     description: 'Savage raider who delights in slaughter',
     realms: [2, 5, 6, 7, 10],
-    traitBias: { aggression: 30, ruthlessness: 35, empathy: -35, cunning: 15 },
+    traitBias: { aggression: 30, ruthlessness: 35, empathy: -35, cunning: 15, piety: -20 },
     skillBonuses: { melee: 25, intimidation: 20, survival: 10 },
     proficiencyBonuses: { blade: 25, blunt: 20 },
     rare: true
@@ -141,7 +142,7 @@ export const CHAMPION_ARCHETYPES = [
     name: 'Hedge Knight',
     description: 'Landless warrior seeking fortune',
     realms: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-    traitBias: { bravery: 15, pride: 10, loyalty: 10 },
+    traitBias: { bravery: 15, pride: 10, loyalty: 10, piety: 0 },
     skillBonuses: { melee: 15, survival: 10 },
     proficiencyBonuses: { blade: 20, polearm: 10 },
     rare: false
@@ -151,7 +152,7 @@ export const CHAMPION_ARCHETYPES = [
     name: 'Witch Hunter',
     description: 'Zealot sworn to purge dark magic',
     realms: [2, 3, 5, 9],
-    traitBias: { ruthlessness: 25, bravery: 20, empathy: -25, vendetta: 20 },
+    traitBias: { ruthlessness: 25, bravery: 20, empathy: -25, vendetta: 20, piety: 20 },
     skillBonuses: { melee: 20, intimidation: 20, survival: 10 },
     proficiencyBonuses: { blade: 20, ranged: 15 },
     rare: true
