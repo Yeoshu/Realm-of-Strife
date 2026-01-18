@@ -88,6 +88,8 @@ export default function HungerGamesSimulator() {
                   <ChampionDetailsPanel
                     selectedChampion={selectedChampion}
                     livingChampions={livingChampions}
+                    events={events}
+                    onViewCombatLog={setSelectedCombatLog}
                   />
                 ) : (
                   <BattlefieldMap
