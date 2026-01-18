@@ -5,3 +5,4 @@ export * from './items';
 export * from './races';
 export * from './combat';
 export * from './personality';
+export * from './skills';

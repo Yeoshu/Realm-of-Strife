@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { REALM_NAMES, CHAMPION_ARCHETYPES, RACES } from '../constants';
+import { SKILLS, WEAPON_PROFICIENCY_CATEGORIES, getProficiencyLevel } from '../constants/skills';
 import { clamp } from '../utils';
 
 export function ChampionEditor({
@@ -264,6 +265,112 @@ export function ChampionEditor({
                       ))}
                     </div>
                   </div>
+
+                  {/* Skills */}
+                  {editingChampion.skills && (
+                    <div>
+                      <h4 className="text-sm font-bold text-stone-400 mb-2">SKILLS</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {Object.entries(SKILLS).map(([skillId, skillInfo]) => {
+                          const value = editingChampion.skills[skillId] || 0;
+                          const skillLevel = value >= 90 ? 'Master' :
+                                           value >= 75 ? 'Expert' :
+                                           value >= 60 ? 'Skilled' :
+                                           value >= 45 ? 'Competent' :
+                                           value >= 30 ? 'Novice' : 'Untrained';
+                          const levelColor = value >= 90 ? 'text-yellow-400' :
+                                           value >= 75 ? 'text-purple-400' :
+                                           value >= 60 ? 'text-blue-400' :
+                                           value >= 45 ? 'text-green-400' :
+                                           value >= 30 ? 'text-stone-300' : 'text-stone-500';
+                          return (
+                            <div key={skillId} className="bg-stone-800/50 p-2 rounded">
+                              <div className="flex items-center justify-between mb-1">
+                                <label
+                                  className="block text-xs text-stone-300 font-medium capitalize"
+                                  title={skillInfo.description}
+                                >
+                                  {skillInfo.name}
+                                </label>
+                                <span className={`text-xs font-bold ${levelColor}`}>{skillLevel}</span>
+                              </div>
+                              <input
+                                type="range"
+                                min="5"
+                                max="95"
+                                value={value}
+                                onChange={(e) => {
+                                  const newValue = Number(e.target.value);
+                                  onUpdateChampionStat(editingChampion.id, 'skills', skillId, newValue);
+                                  setEditingChampion(prev => ({
+                                    ...prev,
+                                    skills: { ...prev.skills, [skillId]: newValue }
+                                  }));
+                                }}
+                                className="w-full h-2"
+                              />
+                              <div className="flex justify-between text-xs text-stone-500 mt-1">
+                                <span>{value}</span>
+                                <span className="text-stone-600 text-[10px]">{skillInfo.primaryStats.join(', ')}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Weapon Proficiencies */}
+                  {editingChampion.proficiencies && (
+                    <div>
+                      <h4 className="text-sm font-bold text-stone-400 mb-2">WEAPON PROFICIENCIES</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        {Object.entries(WEAPON_PROFICIENCY_CATEGORIES).map(([categoryId, categoryInfo]) => {
+                          const value = editingChampion.proficiencies[categoryId] || 0;
+                          const profLevel = getProficiencyLevel(value);
+                          const levelColor = profLevel.name === 'Master' ? 'text-yellow-400' :
+                                           profLevel.name === 'Expert' ? 'text-purple-400' :
+                                           profLevel.name === 'Proficient' ? 'text-blue-400' :
+                                           profLevel.name === 'Competent' ? 'text-green-400' :
+                                           profLevel.name === 'Novice' ? 'text-stone-300' : 'text-red-400';
+                          const modifierText = profLevel.hitModifier >= 0
+                            ? `+${Math.round(profLevel.hitModifier * 100)}% hit`
+                            : `${Math.round(profLevel.hitModifier * 100)}% hit`;
+                          return (
+                            <div key={categoryId} className="bg-stone-800/50 p-2 rounded">
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="block text-xs text-stone-300 font-medium capitalize">
+                                  {categoryInfo.name.replace(' Weapons', '').replace(' Combat', '')}
+                                </label>
+                                <span className={`text-xs font-bold ${levelColor}`}>{profLevel.name}</span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={value}
+                                onChange={(e) => {
+                                  const newValue = Number(e.target.value);
+                                  onUpdateChampionStat(editingChampion.id, 'proficiencies', categoryId, newValue);
+                                  setEditingChampion(prev => ({
+                                    ...prev,
+                                    proficiencies: { ...prev.proficiencies, [categoryId]: newValue }
+                                  }));
+                                }}
+                                className="w-full h-2"
+                              />
+                              <div className="flex justify-between text-xs text-stone-500 mt-1">
+                                <span>{value}</span>
+                                <span className={`text-[10px] ${profLevel.hitModifier >= 0 ? 'text-green-500' : 'text-red-400'}`}>
+                                  {modifierText}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Relationships */}
                   <div>

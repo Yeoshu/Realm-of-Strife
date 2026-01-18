@@ -2,6 +2,7 @@
 
 import { random, randomFloat, pick, clamp, generateId } from '../utils';
 import { REALM_NAMES, FIRST_NAMES, RACES, CHAMPION_ARCHETYPES, BACKSTORY_TEMPLATES } from '../constants';
+import { calculateSkill, calculateProficiency, SKILLS, WEAPON_PROFICIENCY_CATEGORIES } from '../constants/skills';
 import { modifyRelationship } from './relationships';
 
 export function generateChampion(realm, usedNames) {
@@ -65,6 +66,8 @@ export function generateChampion(realm, usedNames) {
   const backstoryCount = randomFloat() < 0.3 ? 2 : 1;
   const backstories = [];
   const usedTypes = new Set();
+  const backstorySkillBonuses = {};
+  const backstoryProficiencyBonuses = {};
 
   for (let i = 0; i < backstoryCount; i++) {
     const available = BACKSTORY_TEMPLATES.filter(b => !usedTypes.has(b.type));
@@ -79,8 +82,63 @@ export function generateChampion(realm, usedNames) {
           personality[trait] = clamp(personality[trait] + mod, 5, 95);
         }
       });
+
+      // Accumulate backstory skill bonuses
+      if (story.skillEffects) {
+        Object.entries(story.skillEffects).forEach(([skill, mod]) => {
+          backstorySkillBonuses[skill] = (backstorySkillBonuses[skill] || 0) + mod;
+        });
+      }
+
+      // Accumulate backstory proficiency bonuses
+      if (story.proficiencyEffects) {
+        Object.entries(story.proficiencyEffects).forEach(([prof, mod]) => {
+          backstoryProficiencyBonuses[prof] = (backstoryProficiencyBonuses[prof] || 0) + mod;
+        });
+      }
     }
   }
+
+  // Generate skills based on stats, race, archetype, and backstory
+  const raceSkillBonuses = selectedRace.skillBonuses || {};
+  const archetypeSkillBonuses = archetype.skillBonuses || {};
+
+  // Build combined stats including personality traits for skill calculation
+  const combinedStats = {
+    ...personality,
+    strength: clamp(random(20, 60) + nobleBonus + (bonus.strength || 0) + (raceBonus.strength || 0), 0, 100),
+    speed: clamp(random(25, 65) + (bonus.speed || 0) + (raceBonus.speed || 0), 0, 100),
+    stealth: clamp(random(20, 60) + (bonus.stealth || 0) + (raceBonus.stealth || 0), 0, 100),
+    intelligence: clamp(random(30, 70) + (bonus.intelligence || 0) + (raceBonus.intelligence || 0), 0, 100),
+    charisma: clamp(random(20, 60) + (bonus.charisma || 0) + (raceBonus.charisma || 0), 0, 100),
+    survival: clamp(random(15, 55) + (bonus.survival || 0) + (raceBonus.survival || 0), 0, 100),
+    combat: clamp(random(15, 50) + nobleBonus + (bonus.combat || 0) + (raceBonus.combat || 0), 0, 100)
+  };
+
+  const skills = {};
+  Object.keys(SKILLS).forEach(skillId => {
+    skills[skillId] = calculateSkill(
+      skillId,
+      combinedStats,
+      raceSkillBonuses,
+      archetypeSkillBonuses,
+      backstorySkillBonuses
+    );
+  });
+
+  // Generate weapon proficiencies based on race, archetype, and backstory
+  const raceProfBonuses = selectedRace.proficiencyBonuses || {};
+  const archetypeProfBonuses = archetype.proficiencyBonuses || {};
+
+  const proficiencies = {};
+  Object.keys(WEAPON_PROFICIENCY_CATEGORIES).forEach(categoryId => {
+    proficiencies[categoryId] = calculateProficiency(
+      categoryId,
+      raceProfBonuses,
+      archetypeProfBonuses,
+      backstoryProficiencyBonuses
+    );
+  });
 
   return {
     id: generateId(),
@@ -94,15 +152,15 @@ export function generateChampion(realm, usedNames) {
     raceName: selectedRace.name,
     raceDescription: selectedRace.description,
 
-    // Core attributes (0-100) - includes race bonuses
+    // Core attributes (0-100) - includes race bonuses (using pre-calculated values)
     stats: {
-      strength: clamp(random(20, 60) + nobleBonus + (bonus.strength || 0) + (raceBonus.strength || 0), 0, 100),
-      speed: clamp(random(25, 65) + (bonus.speed || 0) + (raceBonus.speed || 0), 0, 100),
-      stealth: clamp(random(20, 60) + (bonus.stealth || 0) + (raceBonus.stealth || 0), 0, 100),
-      intelligence: clamp(random(30, 70) + (bonus.intelligence || 0) + (raceBonus.intelligence || 0), 0, 100),
-      charisma: clamp(random(20, 60) + (bonus.charisma || 0) + (raceBonus.charisma || 0), 0, 100),
-      survival: clamp(random(15, 55) + (bonus.survival || 0) + (raceBonus.survival || 0), 0, 100),
-      combat: clamp(random(15, 50) + nobleBonus + (bonus.combat || 0) + (raceBonus.combat || 0), 0, 100)
+      strength: combinedStats.strength,
+      speed: combinedStats.speed,
+      stealth: combinedStats.stealth,
+      intelligence: combinedStats.intelligence,
+      charisma: combinedStats.charisma,
+      survival: combinedStats.survival,
+      combat: combinedStats.combat
     },
 
     // Magic (placeholder for future magic system)
@@ -143,6 +201,10 @@ export function generateChampion(realm, usedNames) {
     archetypeName: archetype.name,
     archetypeDesc: archetype.description,
     backstories: backstories.map(b => b.text),
+
+    // Skills and proficiencies
+    skills,
+    proficiencies,
 
     // Track who wronged them (for vendetta system)
     grudges: {}

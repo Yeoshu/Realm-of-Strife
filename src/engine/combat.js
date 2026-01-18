@@ -13,6 +13,14 @@ import {
   hasRacePassive,
   applyRacePassive
 } from '../constants';
+import {
+  getProficiencyHitModifier,
+  getProficiencyDamageModifier,
+  getRelevantCombatSkill,
+  calculateSuccessLevel,
+  applyCombatSuccessEffects,
+  SUCCESS_LEVELS
+} from '../constants/skills';
 import { modifyRelationship } from './relationships';
 
 export function getCombatPower(champion) {
@@ -75,7 +83,7 @@ export function selectTargetBodyPart(attacker, defender, isAimed) {
   return BODY_PARTS[2]; // chest as fallback
 }
 
-export function calculateHitChance(attacker, defender, attackType) {
+export function calculateHitChance(attacker, defender, attackType, weaponCategory = 'unarmed') {
   let baseChance = 50;
 
   // Attacker bonuses
@@ -96,6 +104,16 @@ export function calculateHitChance(attacker, defender, attackType) {
       baseChance += 10;
     }
   });
+
+  // Proficiency modifier for hit chance
+  const proficiency = attacker.proficiencies?.[weaponCategory] || 0;
+  const profMod = getProficiencyHitModifier(proficiency);
+  baseChance *= (1 + profMod);
+
+  // Relevant skill bonus (melee or archery)
+  const relevantSkill = getRelevantCombatSkill(weaponCategory);
+  const skillValue = attacker.skills?.[relevantSkill] || 0;
+  baseChance += skillValue * 0.15;
 
   // Race passives - dodge bonus for defender
   const defenderDodge = getRacePassiveValue(defender, 'dodgeBonus');
@@ -119,16 +137,23 @@ export function calculateDamage(attacker, attackType, bodyPart, weapon, defender
   damage += attacker.stats.strength * 0.2;
 
   // Weapon bonus
+  let weaponCategory = 'unarmed';
   if (weapon) {
     damage += weapon.combatBonus * 0.3;
 
+    // Get weapon category from item or fallback to WEAPON_CATEGORIES mapping
+    weaponCategory = weapon.category || WEAPON_CATEGORIES[weapon.id] || 'blade';
+
     // Race passive - weapon type bonus (giants with blunt weapons)
-    const weaponType = WEAPON_CATEGORIES[weapon.id];
-    damage = applyRacePassive(attacker, 'weaponTypeBonus', damage, { weaponType });
+    damage = applyRacePassive(attacker, 'weaponTypeBonus', damage, { weaponType: weaponCategory });
   } else {
     // Unarmed - check for claws and fangs (beastkin)
     damage = applyRacePassive(attacker, 'unarmedBonus', damage, {});
   }
+
+  // Proficiency damage modifier
+  const proficiency = attacker.proficiencies?.[weaponCategory] || 0;
+  damage *= getProficiencyDamageModifier(proficiency);
 
   // Body part multiplier
   damage *= bodyPart.damageMultiplier;
@@ -233,24 +258,61 @@ export function simulateCombatExchange(attacker, defender, round, combatLog) {
   const isAimed = attacker.stats.combat > 60 && randomFloat() < 0.3;
   const bodyPart = selectTargetBodyPart(attacker, defender, isAimed);
 
-  const hitChance = calculateHitChance(attacker, defender, attackType);
+  const hitChance = calculateHitChance(attacker, defender, attackType, weaponCategory);
   const roll = random(1, 100);
   const hit = roll <= hitChance;
+
+  // Calculate degree of success using skill system
+  const relevantSkill = getRelevantCombatSkill(weaponCategory);
+  const skillValue = attacker.skills?.[relevantSkill] || 50;
+  const defenderTactics = defender.skills?.tactics || 30;
+  const difficulty = 50 + (defenderTactics - 30) * 0.3; // Defender's tactics increases difficulty
+  const successResult = calculateSuccessLevel(skillValue, difficulty);
 
   // Check for block/parry
   const blockChance = defender.stats.combat * 0.2 + (defender.inventory.some(i => i.combatBonus) ? 15 : 0);
   const blocked = hit && random(1, 100) <= blockChance;
 
   let damage = 0;
+  let stunned = false;
+  let counterattack = false;
+
   if (hit) {
-    damage = calculateDamage(attacker, attackType, bodyPart, weapon);
+    damage = calculateDamage(attacker, attackType, bodyPart, weapon, defender);
+
+    // Apply degree of success effects
+    if (successResult.successLevel === SUCCESS_LEVELS.CRITICAL_SUCCESS) {
+      // Critical hit: +50% damage and chance to stun
+      damage = Math.round(damage * 1.5);
+      stunned = randomFloat() < 0.5;
+      combatLog.push({
+        text: `CRITICAL HIT! ${attacker.name} strikes with devastating precision!`,
+        type: 'critical',
+        round
+      });
+    } else if (successResult.successLevel === SUCCESS_LEVELS.PARTIAL_SUCCESS) {
+      // Partial success: reduced damage
+      damage = Math.round(damage * 0.75);
+    }
+
     if (blocked) damage = Math.round(damage * 0.5);
+  } else {
+    // Check for critical failure (counterattack opportunity)
+    if (successResult.successLevel === SUCCESS_LEVELS.CRITICAL_FAILURE) {
+      counterattack = true;
+      combatLog.push({
+        text: `${attacker.name} overextends badly! ${defender.name} seizes the opening!`,
+        type: 'critical_miss',
+        round
+      });
+    }
   }
 
   const logEntry = generateCombatLogEntry(attacker, defender, attackType, bodyPart, hit, damage, blocked, weapon);
   logEntry.round = round;
   logEntry.hitChance = hitChance;
   logEntry.roll = roll;
+  logEntry.successLevel = successResult.successLevel;
   combatLog.push(logEntry);
 
   // Apply damage
@@ -259,6 +321,16 @@ export function simulateCombatExchange(attacker, defender, round, combatLog) {
 
     // Energy cost from being hit
     defender.energy -= Math.round(damage * 0.3);
+
+    // Stun effect reduces defender's next action
+    if (stunned) {
+      defender.energy -= 15;
+      combatLog.push({
+        text: `${defender.name} is stunned by the blow!`,
+        type: 'stun',
+        round
+      });
+    }
 
     // Record injury for significant hits
     if (damage >= 10) {
@@ -283,10 +355,21 @@ export function simulateCombatExchange(attacker, defender, round, combatLog) {
     }
   }
 
+  // Handle counterattack from critical failure
+  if (counterattack && defender.health > 0 && defender.energy > 10) {
+    const counterDamage = random(10, 20) + defender.stats.strength * 0.1;
+    attacker.health -= counterDamage;
+    combatLog.push({
+      text: `${defender.name} counterattacks for ${Math.round(counterDamage)} damage!`,
+      type: 'counterattack',
+      round
+    });
+  }
+
   // Attacker energy cost
   attacker.energy -= random(3, 8);
 
-  return { hit, damage, blocked, bodyPart };
+  return { hit, damage, blocked, bodyPart, stunned, counterattack };
 }
 
 export function resolveCombat(attacker, defender, allChampions) {
